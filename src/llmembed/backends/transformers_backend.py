@@ -1,18 +1,17 @@
-from typing import Any, List, Optional, Union
-
-import numpy as np
+from typing import Any, List, Optional, Union, Dict
 import torch
+import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from ..interfaces import Backend
-
 
 class TransformersBackend(Backend):
     def __init__(
         self,
         model_name: str,
         device: Optional[str] = None,
-        quantization: Optional[str] = None
+        quantization: Optional[str] = None,
+        **kwargs: Any
     ):
         """
         Initialize TransformersBackend.
@@ -21,6 +20,7 @@ class TransformersBackend(Backend):
             model_name: HuggingFace model identifier.
             device: Device to load model on ('cpu', 'cuda', 'mps'). If None, auto-detects.
             quantization: Quantization config ('4bit', '8bit', or None).
+            **kwargs: Additional arguments passed to the backend (e.g., model_kwargs).
         """
         self.model_name = model_name
         self.quantization = quantization
@@ -37,11 +37,14 @@ class TransformersBackend(Backend):
             
         self.model = None
         self.tokenizer = None
-        self._load_model()
+        
+        # Extract model_kwargs if present
+        model_kwargs = kwargs.pop("model_kwargs", {})
+        self._load_model(model_kwargs)
 
-    def _load_model(self) -> None:
+    def _load_model(self, model_kwargs: "Dict[str, Any]") -> None:
         quantization_config = None
-        load_kws = {}
+        load_kws = model_kwargs.copy()
         
         if self.quantization:
             if self.quantization == "4bit":
@@ -112,13 +115,6 @@ class TransformersBackend(Backend):
             outputs = self.model(**inputs, output_hidden_states=True)
             
         # Get hidden states
-        # outputs.hidden_states is a tuple of (layer_0, ..., layer_N)
-        # layer_index -1 means last layer.
-        # Note: hidden_states usually includes embeddings at index 0? 
-        # Transformers output_hidden_states=True returns (embeddings, layer_1, ... layer_N)
-        # So len is num_layers + 1.
-        # layer_index -1 is the last one.
-        
         hidden_states = outputs.hidden_states[layer_index]
         
         input_ids = inputs.input_ids
@@ -132,11 +128,6 @@ class TransformersBackend(Backend):
             
         elif pooling == "last_token":
             # Use attention_mask to find the last non-padding token
-            # inputs.attention_mask: [batch, seq_len] with 1 for token, 0 for pad
-            # We want the index of the last '1'.
-            # Note: left-padding vs right-padding matters. 
-            # AutoTokenizer usually right-pads by default for some, left for others.
-            # We can find the last index where mask is 1.
             seq_lengths = inputs.attention_mask.sum(dim=1) - 1
             # Gather
             batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
@@ -144,10 +135,6 @@ class TransformersBackend(Backend):
             
         elif pooling == "eos_token":
              # Find index of EOS token.
-             # If multiple EOS, taking the last one? Or the first one after text?
-             # Assuming inputs might contain EOS.
-             # If no EOS found, fallback to last_token?
-             # For now, simplistic implementation: find last occurrence of eos_token_id
              eos_id = self.tokenizer.eos_token_id
              input_ids = inputs.input_ids
              

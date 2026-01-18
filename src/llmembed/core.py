@@ -7,7 +7,7 @@ from .interfaces import Backend
 try:
     from .backends.vllm_backend import VLLMBackend
 except ImportError:
-    VLLMBackend = None # type: ignore
+    VLLMBackend = None
 
 class Encoder:
     def __init__(
@@ -15,7 +15,8 @@ class Encoder:
         model_name: str,
         backend: str = "transformers",
         device: Optional[str] = None,
-        quantization: Optional[str] = None
+        quantization: Optional[str] = None,
+        **kwargs: Any
     ):
         """
         Initialize the Encoder.
@@ -25,23 +26,39 @@ class Encoder:
             backend: Backend to use ('transformers', 'vllm').
             device: Device ('cpu', 'cuda', etc.). If None, auto-detects.
             quantization: Quantization config ('4bit', '8bit', or None).
+            **kwargs: Additional arguments passed to the backend (e.g., model_kwargs, gpu_memory_utilization).
         """
         self.backend_name = backend
         self.backend_instance: Backend
         
         if backend == "transformers":
-            self.backend_instance = TransformersBackend(model_name, device, quantization)
+            self.backend_instance = TransformersBackend(
+                model_name, 
+                device=device, 
+                quantization=quantization, 
+                **kwargs
+            )
         elif backend == "vllm":
             # Check if VLLMBackend class is available
             if VLLMBackend is None:
                 # Try importing again to see specific error or if it was just skipped
                 try:
                     from .backends.vllm_backend import VLLMBackend as VBackend
-                    self.backend_instance = VBackend(model_name, device, quantization)
+                    self.backend_instance = VBackend(
+                        model_name, 
+                        device=device, 
+                        quantization=quantization, 
+                        **kwargs
+                    )
                 except ImportError as e:
                     raise ImportError(f"VLLM backend requires 'vllm' installed. Error: {e}")
             else:
-                 self.backend_instance = VLLMBackend(model_name, device, quantization)
+                 self.backend_instance = VLLMBackend(
+                     model_name, 
+                     device=device, 
+                     quantization=quantization, 
+                     **kwargs
+                 )
         else:
             raise ValueError(f"Unknown backend: {backend}")
 
