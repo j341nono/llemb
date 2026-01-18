@@ -7,7 +7,7 @@ from .interfaces import Backend
 try:
     from .backends.vllm_backend import VLLMBackend
 except ImportError:
-    VLLMBackend = None
+    VLLMBackend = None # type: ignore
 
 class Encoder:
     def __init__(

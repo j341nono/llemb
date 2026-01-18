@@ -71,6 +71,20 @@ enc = llmembed.Encoder(
 embeddings = enc.encode("Hello world", pooling="pcoteol")
 ```
 
+## vLLM Backend Configuration
+
+When using the `vllm` backend, you can pass native vLLM configuration arguments directly to the `Encoder`. This allows full control over memory usage, parallelism, and model length.
+
+```python
+encoder = Encoder(
+    model_name="meta-llama/Llama-3.1-8B",
+    backend="vllm",
+    gpu_memory_utilization=0.9, # Example of user control: allocate 90% GPU memory
+    max_model_len=4096,         # Limit context length
+    tensor_parallel_size=1      # Number of GPUs to use
+)
+```
+
 ## References
 
 **For PromptEOL:**
