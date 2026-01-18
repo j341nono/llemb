@@ -43,14 +43,9 @@ def test_encode_eos_token(backend):
     assert emb_fallback.shape[0] == 1
 
 def test_encode_prompt_eol(backend):
-    text = "hello\nworld"
+    text = "hello world"
     emb = backend.encode(text, pooling="prompt_eol")
     assert emb.shape[0] == 1
-    
-    # Test no newline fallback
-    text_no_nl = "hello world"
-    emb_fallback = backend.encode(text_no_nl, pooling="prompt_eol")
-    assert emb_fallback.shape[0] == 1
 
 def test_layer_index(backend):
     # Layer 0 (embeddings)

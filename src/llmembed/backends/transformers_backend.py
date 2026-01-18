@@ -20,7 +20,7 @@ class TransformersBackend(Backend):
         Args:
             model_name: HuggingFace model identifier.
             device: Device to load model on ('cpu', 'cuda', 'mps').
-            quantization: Quantization config ('bitsandbytes', '4bit', '8bit', None).
+            quantization: Quantization config ('4bit', '8bit', or None).
         """
         self.model_name = model_name
         self.device = device
@@ -34,7 +34,7 @@ class TransformersBackend(Backend):
         load_kws = {}
         
         if self.quantization:
-            if self.quantization in ["bitsandbytes", "4bit"]:
+            if self.quantization == "4bit":
                 quantization_config = BitsAndBytesConfig(load_in_4bit=True) # type: ignore
             elif self.quantization == "8bit":
                 quantization_config = BitsAndBytesConfig(load_in_8bit=True) # type: ignore
@@ -68,6 +68,9 @@ class TransformersBackend(Backend):
 
         if isinstance(text, str):
             text = [text]
+            
+        if pooling == "prompt_eol":
+            text = [f'This Sentence : "{t}" means in one word:"' for t in text]
             
         inputs = self.tokenizer(
             text,
@@ -135,49 +138,11 @@ class TransformersBackend(Backend):
              embeddings = torch.stack(embeddings_list)
 
         elif pooling == "prompt_eol":
-            # Find last newline token.
-            # Simple heuristic: decode and find '\n' char position? 
-            # Better: Search for tokens that represent '\n'. 
-            # Or iterate tokens?
-            # Since tokenization is complex, maybe just decoding is slow but accurate?
-            # But we need token index.
-            # Strategy: Get offset mapping? 
-            # Simplified: Look for a specific token ID? '\n' might be multiple IDs.
-            # Let's assume we want the last token that is NOT padding...
-            # The requirement: "providing a prompt and getting the embedding
-            # of the token immediately following the prompt."
-            # If I stick to my interpretation: Find the last '\n' in the sequence.
-            
-            # Alternative interpretation based on "immediately following the prompt":
-            # Maybe the user provides `prompt` and `text` (completion)?
-            # But the signature is `encode(text)`.
-            # I will implement finding the last '\n' character's token.
-            
-            # This is tricky with BPE. '\n' might be part of a word.
-            # I'll implement a heuristic: Find the last token whose string
-            # representation ends with '\n'.
-            
-            embeddings_list = []
-            for i in range(input_ids.size(0)):
-                tokens = self.tokenizer.convert_ids_to_tokens(inputs.input_ids[i])
-                found = False
-                # Search backwards from last non-pad token
-                last_idx = (inputs.attention_mask[i].sum() - 1).item()
-                for idx in range(last_idx, -1, -1):
-                    token_str = tokens[idx]
-                    # Clean up token string (transformers often adds Ġ or similar)
-                    if hasattr(self.tokenizer, "convert_tokens_to_string"):
-                         decoded = self.tokenizer.convert_tokens_to_string([token_str])
-                    else:
-                         decoded = token_str # fallback
-                    
-                    if "\n" in decoded:
-                        embeddings_list.append(hidden_states[i, idx])
-                        found = True
-                        break
-                if not found:
-                    embeddings_list.append(hidden_states[i, last_idx])
-            embeddings = torch.stack(embeddings_list)
+            # Extract the very last token (corresponding to the final ")
+            # Use attention_mask to find the last non-padding token
+            seq_lengths = inputs.attention_mask.sum(dim=1) - 1
+            batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
+            embeddings = hidden_states[batch_indices, seq_lengths]
             
         else:
             raise ValueError(f"Unknown pooling method: {pooling}")
