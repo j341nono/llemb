@@ -64,7 +64,7 @@ class VLLMBackend(Backend):
             # (usually one per prompt unless best_of > 1)
             # We take the first one
             if hasattr(output, 'outputs') and len(output.outputs) > 0:
-                 embeddings.append(output.outputs.embedding)
+                 embeddings.append(output.outputs[0].embedding)
             else:
                  # Fallback or error handling
                  # If structure differs, we might need to inspect output

@@ -10,17 +10,21 @@ def test_vllm_init():
         mock_llm_cls.assert_called_once()
 
 def test_vllm_encode():
-    with patch("llmembed.backends.vllm_backend.LLM"):
-        backend = VLLMBackend("model-name")
+    with patch("llmembed.backends.vllm_backend.LLM") as mock_llm_cls:
+        mock_instance = mock_llm_cls.return_value
         
-        # Mock the encode output
+        # Create a mock output object that mimics vLLM's RequestOutput structure for embed()
         mock_output = MagicMock()
-        # Assume output has outputs.embedding
-        mock_output.outputs.embedding = [0.1, 0.2]
+        mock_embedding = MagicMock()
+        mock_embedding.embedding = [0.1, 0.2]
+        mock_output.outputs = [mock_embedding]
         
-        # Configure instance
-        backend.model.encode.return_value = [mock_output]
+        # Configure instance to return this structure for embed()
+        mock_instance.embed.return_value = [mock_output]
         
+        backend = VLLMBackend("model-name")
         res = backend.encode("test")
+        
         assert res.shape == (1, 2)
         assert res[0][0] == 0.1
+        mock_instance.embed.assert_called_once()
