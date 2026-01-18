@@ -1,5 +1,5 @@
 import abc
-from typing import Any, List, Union
+from typing import Any, List, Optional, Union
 
 
 class Backend(abc.ABC):
@@ -8,7 +8,7 @@ class Backend(abc.ABC):
         self,
         text: Union[str, List[str]],
         pooling: str = "mean",
-        layer_index: int = -1,
+        layer_index: Optional[int] = None,
         **kwargs: Any
     ) -> Any:
         """
@@ -16,7 +16,7 @@ class Backend(abc.ABC):
 
         Args:
             text: Input text or list of texts.
-            pooling: Pooling strategy ('mean', 'last_token', 'eos_token', 'prompt_eol').
+            pooling: Pooling strategy.
             layer_index: Layer index to extract embeddings from.
             **kwargs: Additional backend-specific arguments.
 

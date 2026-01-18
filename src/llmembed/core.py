@@ -49,7 +49,7 @@ class Encoder:
         self,
         text: Union[str, List[str]],
         pooling: str = "mean",
-        layer_index: int = -1,
+        layer_index: Optional[int] = None,
         **kwargs: Any
     ) -> Any:
         """
@@ -60,6 +60,7 @@ class Encoder:
             pooling: Pooling strategy ('mean', 'last_token', 'eos_token', 'prompt_eol',
                                      'pcoteol', 'ke').
             layer_index: Layer index to extract embeddings from.
+                        Defaults to -2 for 'pcoteol'/'ke', and -1 for others.
             **kwargs: Backend specific arguments.
 
         Returns:

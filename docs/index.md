@@ -13,7 +13,9 @@ Unified embedding extraction from Decoder-only LLMs.
     - `pcoteol`: "Pretended Chain of Thought" - wraps input in a reasoning template.
     - `ke`: "Knowledge Enhancement" - wraps input in a context-aware template.
 - **Quantization**: Support for 4-bit and 8-bit quantization via `bitsandbytes`.
-- **Layer Selection**: Extract embeddings from any layer (default: last hidden state).
+- **Layer Selection**: Extract embeddings from any layer.
+    - Defaults to **-1** (last layer) for standard strategies.
+    - Defaults to **-2** (second-to-last layer) for `pcoteol` and `ke` (as recommended by research).
 
 ## Installation
 
@@ -43,7 +45,7 @@ Initialize the encoder with minimal setup (defaults to transformers, no quantiza
 import llmembed
 
 # Minimal setup
-enc = llmembed.Encoder("sshleifer/tiny-gpt2")
+enc = llmembed.Encoder("meta-llama/Llama-3.1-8B")
 
 # Extract embeddings
 embeddings = enc.encode("Hello world", pooling="mean")
@@ -59,55 +61,25 @@ import llmembed
 
 # Initialize encoder with specific backend and configuration
 enc = llmembed.Encoder(
-    model_name="sshleifer/tiny-gpt2",
+    model_name="meta-llama/Llama-3.1-8B",
     backend="transformers",
     device="cuda", # Force CUDA
     quantization="4bit" # Use 4-bit quantization
 )
 
-# Extract embeddings using pcoteol strategy (recommended with layer_index=-2)
-embeddings = enc.encode("Hello world", pooling="pcoteol", layer_index=-2)
+# Extract embeddings using pcoteol strategy (automatically uses layer -2)
+embeddings = enc.encode("Hello world", pooling="pcoteol")
 ```
 
 ## References
 
-**For `prompt_eol`:**
+**For PromptEOL:**
 
-```bibtex
-@inproceedings{jiang-etal-2024-scaling,
-    title = "Scaling Sentence Embeddings with Large Language Models",
-    author = "Jiang, Ting  and
-      Huang, Shaohan  and
-      Luan, Zhongzhi  and
-      Wang, Deqing  and
-      Zhuang, Fuzhen",
-    editor = "Al-Onaizan, Yaser  and
-      Bansal, Mohit  and
-      Chen, Yun-Nung",
-    booktitle = "Findings of the Association for Computational Linguistics: EMNLP 2024",
-    month = nov,
-    year = "2024",
-    address = "Miami, Florida, USA",
-    publisher = "Association for Computational Linguistics",
-    url = "https://aclanthology.org/2024.findings-emnlp.181/",
-    doi = "10.18653/v1/2024.findings-emnlp.181",
-    pages = "3182--3196",
-}
-```
+Ting Jiang, Shaohan Huang, Zhongzhi Luan, Deqing Wang, and Fuzhen Zhuang. 2024. Scaling Sentence Embeddings with Large Language Models. Findings of the Association for Computational Linguistics: EMNLP 2024.
 
-**For `pcoteol` and `ke`:**
+**For PCoTEOL and KE:**
 
-```bibtex
-@misc{zhang2024simpletechniquesenhancingsentence,
-      title={Simple Techniques for Enhancing Sentence Embeddings in Generative Language Models}, 
-      author={Bowen Zhang and Kehua Chang and Chunping Li},
-      year={2024},
-      eprint={2404.03921},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2404.03921}, 
-}
-```
+Bowen Zhang, Kehua Chang, and Chunping Li. 2024. Simple Techniques for Enhancing Sentence Embeddings in Generative Language Models. arXiv preprint arXiv:2404.03921.
 
 ## Development
 

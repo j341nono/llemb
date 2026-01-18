@@ -39,9 +39,13 @@ class VLLMBackend(Backend):
         self,
         text: Union[str, List[str]],
         pooling: str = "mean",
-        layer_index: int = -1,
+        layer_index: Optional[int] = None,
         **kwargs: Any
     ) -> Any:
+        # Default layer_index logic
+        if layer_index is None:
+             layer_index = -1
+
         if layer_index != -1:
              raise NotImplementedError(
                  "VLLM backend currently only supports extracting the final layer "

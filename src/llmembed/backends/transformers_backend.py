@@ -70,12 +70,19 @@ class TransformersBackend(Backend):
         self,
         text: Union[str, List[str]],
         pooling: str = "mean",
-        layer_index: int = -1,
+        layer_index: Optional[int] = None,
         **kwargs: Any
     ) -> Union[np.ndarray, torch.Tensor]:
         if self.tokenizer is None or self.model is None:
             raise RuntimeError("Model or tokenizer not initialized")
 
+        # Set default layer_index based on pooling strategy
+        if layer_index is None:
+            if pooling in ["pcoteol", "ke"]:
+                layer_index = -2
+            else:
+                layer_index = -1
+        
         if isinstance(text, str):
             text = [text]
             
