@@ -1,13 +1,9 @@
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+import logging
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
-import gc
-import logging
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
-if TYPE_CHECKING:
-    from transformers import BitsAndBytesConfig
 
 from ..interfaces import Backend
 
