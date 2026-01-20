@@ -105,6 +105,10 @@ class Encoder:
             # Ensure it's a tensor for concatenation logic
             if not isinstance(batch_emb, torch.Tensor):
                  batch_emb = torch.tensor(batch_emb)
+            
+            # Offload to CPU immediately to prevent VRAM accumulation
+            batch_emb = batch_emb.detach().cpu()
+            
             results.append(batch_emb)
             
         return torch.cat(results, dim=0)
