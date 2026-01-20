@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 import numpy as np
 import torch
+import gc
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 if TYPE_CHECKING:
@@ -85,9 +86,9 @@ class TransformersBackend(Backend):
             **load_kws
         )
         
-        if not self.quantization:
-             assert self.model is not None
-             self.model.to(self.device)
+        if not self.quantization and "device_map" not in load_kws:
+            assert self.model is not None
+            self.model.to(self.device)
 
     def encode(
         self,
@@ -130,57 +131,67 @@ class TransformersBackend(Backend):
             padding=True,
             truncation=True
         ).to(self.model.device)
-        
-        with torch.no_grad():
-            outputs = self.model(**inputs, output_hidden_states=True)
-            
-        # Get hidden states
-        hidden_states = outputs.hidden_states[layer_index]
-        
-        input_ids = inputs.input_ids
-        
-        if pooling == "mean":
-            # Mask padding tokens
-            mask = inputs.attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
-            sum_embeddings = torch.sum(hidden_states * mask, dim=1)
-            sum_mask = torch.clamp(mask.sum(dim=1), min=1e-9)
-            embeddings = sum_embeddings / sum_mask
-            
-        elif pooling == "last_token":
-            # Use attention_mask to find the last non-padding token
-            seq_lengths = inputs.attention_mask.sum(dim=1) - 1
-            # Gather
-            batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
-            embeddings = hidden_states[batch_indices, seq_lengths]
-            
-        elif pooling == "eos_token":
-             # Find index of EOS token.
-             eos_id = self.tokenizer.eos_token_id
-             input_ids = inputs.input_ids
-             
-             # Create a mask where input_ids == eos_id
-             matches = (input_ids == eos_id)
-             # If any match
-             embeddings_list = []
-             for i in range(input_ids.size(0)):
-                 row_matches = matches[i].nonzero()
-                 if row_matches.size(0) > 0:
-                     last_eos_idx = row_matches[-1].item()
-                     embeddings_list.append(hidden_states[i, last_eos_idx])
-                 else:
-                     # Fallback to last token if no EOS found
-                     last_idx = inputs.attention_mask[i].sum() - 1
-                     embeddings_list.append(hidden_states[i, last_idx])
-             embeddings = torch.stack(embeddings_list)
 
-        elif pooling in ["prompt_eol", "pcoteol", "ke"]:
-            # Extract the very last token (corresponding to the final ")
-            # Use attention_mask to find the last non-padding token
-            seq_lengths = inputs.attention_mask.sum(dim=1) - 1
-            batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
-            embeddings = hidden_states[batch_indices, seq_lengths]
+        try:
+            with torch.no_grad():
+                outputs = self.model(**inputs, output_hidden_states=True)
             
-        else:
-            raise ValueError(f"Unknown pooling method: {pooling}")
+            # Get hidden states
+            hidden_states = outputs.hidden_states[layer_index]
             
-        return embeddings.cpu().detach()
+            input_ids = inputs.input_ids
+            
+            if pooling == "mean":
+                # Mask padding tokens
+                mask = inputs.attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
+                sum_embeddings = torch.sum(hidden_states * mask, dim=1)
+                sum_mask = torch.clamp(mask.sum(dim=1), min=1e-9)
+                embeddings = sum_embeddings / sum_mask
+                
+            elif pooling == "last_token":
+                # Use attention_mask to find the last non-padding token
+                seq_lengths = inputs.attention_mask.sum(dim=1) - 1
+                # Gather
+                batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
+                embeddings = hidden_states[batch_indices, seq_lengths]
+            
+            elif pooling == "eos_token":
+                # Find index of EOS token.
+                eos_id = self.tokenizer.eos_token_id
+                input_ids = inputs.input_ids
+                
+                # Create a mask where input_ids == eos_id
+                matches = (input_ids == eos_id)
+                # If any match
+                embeddings_list = []
+                for i in range(input_ids.size(0)):
+                    row_matches = matches[i].nonzero()
+                    if row_matches.size(0) > 0:
+                        last_eos_idx = row_matches[-1].item()
+                        embeddings_list.append(hidden_states[i, last_eos_idx])
+                    else:
+                        # Fallback to last token if no EOS found
+                        last_idx = inputs.attention_mask[i].sum() - 1
+                        embeddings_list.append(hidden_states[i, last_idx])
+                embeddings = torch.stack(embeddings_list)
+
+            elif pooling in ["prompt_eol", "pcoteol", "ke"]:
+                # Extract the very last token (corresponding to the final ")
+                # Use attention_mask to find the last non-padding token
+                seq_lengths = inputs.attention_mask.sum(dim=1) - 1
+                batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
+                embeddings = hidden_states[batch_indices, seq_lengths]
+            
+            else:
+                raise ValueError(f"Unknown pooling method: {pooling}")
+            
+            return embeddings.cpu().detach()
+            
+        finally:
+            if 'outputs' in locals():
+                del outputs
+            if 'inputs' in locals():
+                del inputs
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
