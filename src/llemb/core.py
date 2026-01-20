@@ -7,7 +7,7 @@ from .interfaces import Backend
 try:
     from .backends.vllm_backend import VLLMBackend
 except ImportError:
-    VLLMBackend = None
+    VLLMBackend = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,12 @@ class Encoder:
                     "Please install `vllm` and ensure `.backends.vllm_backend` exists."
                 )
 
+            # vLLM backend requires a strict string for device (e.g. "cuda").
+            # If 'device' is None (auto), default to "cuda".
+            vllm_device = device if device is not None else "cuda"
+
             self.backend_instance = VLLMBackend(
-                model_name, device=device, quantization=quantization, **kwargs
+                model_name, device=vllm_device, quantization=quantization, **kwargs
             )
         else:
             raise ValueError(
