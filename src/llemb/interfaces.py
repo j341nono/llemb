@@ -9,7 +9,7 @@ class Backend(abc.ABC):
         text: Union[str, List[str]],
         pooling: str = "mean",
         layer_index: Optional[int] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> Any:
         """
         Encode text into embeddings.

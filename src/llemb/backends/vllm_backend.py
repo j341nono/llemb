@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import numpy as np
 import torch
@@ -14,6 +14,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 class VLLMBackend(Backend):
     def __init__(
         self,
@@ -23,11 +24,11 @@ class VLLMBackend(Backend):
         gpu_memory_utilization: float = 0.9,
         max_model_len: Optional[int] = None,
         tensor_parallel_size: int = 1,
-        **kwargs: Any
+        **kwargs: Any,
     ):
         """
         Initialize VLLMBackend.
-        
+
         Args:
             model_name: HuggingFace model identifier.
             device: Device (vLLM usually requires 'cuda').
@@ -45,7 +46,7 @@ class VLLMBackend(Backend):
 
         self.model_name = model_name
         self.device = device
-        
+
         enforce_eager = kwargs.pop("enforce_eager", True)
 
         vllm_kwargs = {
@@ -55,7 +56,7 @@ class VLLMBackend(Backend):
             "gpu_memory_utilization": gpu_memory_utilization,
             "tensor_parallel_size": tensor_parallel_size,
             "enforce_eager": enforce_eager,
-            "runner": "pooling", 
+            "runner": "pooling",
         }
 
         if max_model_len:
@@ -64,7 +65,7 @@ class VLLMBackend(Backend):
         vllm_kwargs.update(kwargs)
 
         logger.info(f"Initializing vLLM with args: {vllm_kwargs}")
-        
+
         self.model = LLM(**vllm_kwargs)
         self.tokenizer = self.model.get_tokenizer()
 
@@ -73,11 +74,11 @@ class VLLMBackend(Backend):
         text: Union[str, List[str]],
         pooling: str = "mean",
         layer_index: Optional[int] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> Union["np.ndarray[Any, Any]", torch.Tensor]:
         """
         Encode text using vLLM.
-        We request 'token_embed' task to fetch all token embeddings, 
+        We request 'token_embed' task to fetch all token embeddings,
         then apply pooling logic client-side.
         """
         if self.model is None:
@@ -105,9 +106,9 @@ class VLLMBackend(Backend):
             ]
         elif pooling == "ke":
             prompts = [
-                f'The essence of a sentence is often captured by its main subjects and actions, '
-                f'while descriptive terms provide additional but less central details. '
-                f'With this in mind , this sentence : "{t}" means in one word:"' 
+                f"The essence of a sentence is often captured by its main subjects and actions, "
+                f"while descriptive terms provide additional but less central details. "
+                f'With this in mind , this sentence : "{t}" means in one word:"'
                 for t in text
             ]
         else:
@@ -116,27 +117,26 @@ class VLLMBackend(Backend):
         try:
             pooling_params = PoolingParams(task="token_embed")
             outputs = self.model.encode(
-                prompts, 
-                pooling_params=pooling_params, 
-                use_tqdm=False,
-                pooling_task="token_embed"
+                prompts, pooling_params=pooling_params, use_tqdm=False, pooling_task="token_embed"
             )
         except (AttributeError, TypeError, ValueError) as e:
-            logger.warning(f"Failed to use LLM.encode with token_embed: {e}. Falling back to LLM.embed.")
-            pooling_params = PoolingParams() 
+            logger.warning(
+                f"Failed to use LLM.encode with token_embed: {e}. Falling back to LLM.embed."
+            )
+            pooling_params = PoolingParams()
             outputs = self.model.embed(prompts, pooling_params=pooling_params, use_tqdm=False)
 
         embeddings_list = []
-        
+
         for i, output in enumerate(outputs):
             if hasattr(output, "outputs"):
                 out_data = output.outputs
             else:
-                out_data = output 
+                out_data = output
 
             if hasattr(out_data, "embedding"):
                 raw_emb = out_data.embedding
-            elif hasattr(out_data, "data"): 
+            elif hasattr(out_data, "data"):
                 raw_emb = out_data.data
             else:
                 raw_emb = getattr(out_data, "embedding", [])
@@ -145,18 +145,18 @@ class VLLMBackend(Backend):
                 val = raw_emb.to(self.device)
             else:
                 val = torch.tensor(raw_emb, device=self.device)
-            
+
             if val.ndim == 1:
                 token_embeddings = val.unsqueeze(0)
             else:
                 token_embeddings = val
-            
+
             if pooling == "mean":
                 if token_embeddings.size(0) > 1:
                     emb = torch.mean(token_embeddings, dim=0)
                 else:
                     emb = token_embeddings[0]
-                    
+
             elif pooling == "last_token":
                 emb = token_embeddings[-1]
 
@@ -171,14 +171,14 @@ class VLLMBackend(Backend):
                         f"(length={seq_len}). Falling back to last token."
                     )
                     emb = token_embeddings[-1]
-                
+
             elif pooling == "eos_token":
                 if hasattr(output, "prompt_token_ids"):
                     token_ids = output.prompt_token_ids
                     eos_id = self.tokenizer.eos_token_id
-                    
+
                     indices = [idx for idx, tid in enumerate(token_ids) if tid == eos_id]
-                    
+
                     if indices and indices[-1] < token_embeddings.size(0):
                         emb = token_embeddings[indices[-1]]
                     else:
@@ -189,13 +189,13 @@ class VLLMBackend(Backend):
 
             elif pooling in ["prompt_eol", "pcoteol", "ke"]:
                 emb = token_embeddings[-1]
-            
+
             else:
                 raise ValueError(f"Unknown pooling method: {pooling}")
-            
+
             embeddings_list.append(emb)
 
         if not embeddings_list:
             return torch.empty(0)
-            
+
         return torch.stack(embeddings_list).cpu().detach()

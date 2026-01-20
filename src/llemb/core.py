@@ -1,5 +1,5 @@
-from typing import Any, List, Optional, Union
 import logging
+from typing import Any, List, Optional, Union
 
 from .backends.transformers_backend import TransformersBackend
 from .interfaces import Backend
@@ -11,6 +11,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 class Encoder:
     def __init__(
         self,
@@ -18,7 +19,7 @@ class Encoder:
         backend: str = "transformers",
         device: Optional[str] = None,
         quantization: Optional[str] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ):
         """
         Initialize the Encoder.
@@ -27,20 +28,17 @@ class Encoder:
             model_name: Model identifier.
             backend: Backend to use ('transformers' or 'vllm').
             device: Device ('cpu', 'cuda', etc.). If None, auto-detects.
-            quantization: Quantization config ('4bit', '8bit', or None for transformers; 
+            quantization: Quantization config ('4bit', '8bit', or None for transformers;
                           'fp8', 'awq', 'gptq' etc. for vllm).
             **kwargs: Additional arguments passed to the backend.
                       For vllm, this includes 'tensor_parallel_size', 'gpu_memory_utilization', etc.
         """
         self.backend_name = backend
         self.backend_instance: Backend
-        
+
         if backend == "transformers":
             self.backend_instance = TransformersBackend(
-                model_name, 
-                device=device, 
-                quantization=quantization, 
-                **kwargs
+                model_name, device=device, quantization=quantization, **kwargs
             )
         elif backend == "vllm":
             if VLLMBackend is None:
@@ -48,22 +46,21 @@ class Encoder:
                     "The 'vllm' backend is not available. "
                     "Please install `vllm` and ensure `.backends.vllm_backend` exists."
                 )
-            
+
             self.backend_instance = VLLMBackend(
-                model_name,
-                device=device,
-                quantization=quantization,
-                **kwargs
+                model_name, device=device, quantization=quantization, **kwargs
             )
         else:
-            raise ValueError(f"Unknown backend: {backend}. Supported backends are 'transformers' and 'vllm'.")
+            raise ValueError(
+                f"Unknown backend: {backend}. Supported backends are 'transformers' and 'vllm'."
+            )
 
     def encode(
         self,
         text: Union[str, List[str]],
         pooling: str = "mean",
         layer_index: Optional[int] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> Any:
         """
         Encode text into embeddings.
