@@ -1,0 +1,29 @@
+name: Deploy Docs (MkDocs)
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Sync environment
+        run: uv sync
+
+      - name: Build docs
+        run: uv run mkdocs build
+
+      - name: Deploy to GitHub Pages
+        run: uv run mkdocs gh-deploy --force

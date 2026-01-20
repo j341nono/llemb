@@ -59,6 +59,10 @@ class TransformersBackend(Backend):
             
             if quantization_config:
                 load_kws["quantization_config"] = quantization_config
+            
+            # Ensure device_map is set for quantization (required for bitsandbytes)
+            if "device_map" not in load_kws:
+                load_kws["device_map"] = "auto"
         
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         assert self.tokenizer is not None
