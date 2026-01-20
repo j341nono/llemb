@@ -1,19 +1,23 @@
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/llemb?logo=pypi&style=flat&color=blue)](https://pypi.org/project/llemb/)
 [![PyPI - Package Version](https://img.shields.io/pypi/v/llemb?logo=pypi&style=flat&color=orange)](https://pypi.org/project/llemb/)
 [![License](https://img.shields.io/github/license/j341nono/llemb?logo=github&style=flat&color=green)](https://github.com/j341nono/llemb/blob/main/LICENSE)
+
 # llemb: Unified Embedding Extraction from Decoder-only LLMs
 
 **llemb** is a lightweight framework designed to extract high-quality sentence embeddings from Decoder-only Large Language Models (LLMs) like Llama, Mistral, and others. It unifies various state-of-the-art pooling strategies and efficiency optimizations into a simple, coherent interface.
 
-With `llemb`, you can easily leverage powerful LLMs for embedding tasks using advanced techniques like **PromptEOL** and **PCoTEOL**, with built-in support for quantization to run on consumer hardware.
+With `llemb`, you can easily leverage powerful LLMs for embedding tasks using advanced techniques like **PromptEOL** and **PCoTEOL**, with built-in support for **Batch Processing** and **vLLM** for high-throughput inference.
 
 ## Features
 
-- **Flexible Backends**: Seamless support for Hugging Face Transformers.
+- **Flexible Backends**: Seamless support for **Hugging Face Transformers** and **vLLM** (for high-speed inference).
 - **Advanced Pooling Strategies**:
     - Standard: `mean`, `last_token`, `eos_token`
+    - Precise Control: `index` (extract from specific token indices)
     - Research-grade: `prompt_eol`, `pcoteol` (Pretended Chain of Thought), `ke` (Knowledge Enhancement)
-- **Efficient Inference**: Native support for **4-bit and 8-bit quantization** via `bitsandbytes`.
+- **High-Performance**:
+    - **Batch Processing**: Efficiently handles large datasets with automatic CPU offloading and progress bars.
+    - **Quantization**: Native support for **4-bit and 8-bit** via `bitsandbytes`.
 - **Granular Control**: Extract embeddings from any layer (defaults to recommended layers based on research).
 
 ## Installation
@@ -38,6 +42,16 @@ pip install "llemb[quantization]"
 uv add llemb[quantization]
 ```
 
+**With vLLM Support**
+
+To enable the vLLM backend for faster inference:
+
+```bash
+pip install "llemb[vllm]"
+# or
+uv add llemb[vllm]
+```
+
 ## Getting Started
 
 Initialize the encoder and start extracting embeddings in just a few lines of code.
@@ -57,9 +71,38 @@ print(embeddings.shape)
 # => (1, 4096)
 ```
 
+### Batch Processing (Recommended for Large Data)
+
+Process lists of texts efficiently. `llemb` handles batching, progress tracking, and memory management (CPU offloading) automatically.
+
+```python
+texts = [
+    "The quick brown fox jumps over the lazy dog.",
+    "Machine learning is fascinating.",
+    # ... thousands of texts ...
+]
+
+# Process in batches of 32
+embeddings = enc.encode(texts, batch_size=32, pooling="mean")
+
+print(embeddings.shape)
+# => (N, 4096)
+```
+
+### Using vLLM Backend
+
+For maximum throughput on supported hardware, use the vLLM backend.
+
+```python
+enc = llemb.Encoder(
+    "meta-llama/Llama-3.1-8B",
+    backend="vllm"
+)
+```
+
 ### Advanced Usage (Quantization & Research Strategies)
 
-Use quantization to reduce memory usage and apply advanced pooling strategies like `pcoteol` for better representation.
+Use quantization to reduce memory usage and apply advanced pooling strategies like `pcoteol`.
 
 ```python
 import llemb
@@ -117,6 +160,7 @@ encoder = llemb.Encoder(
 | `mean` | Average pooling of all tokens (excluding padding). | -1 (Last) |
 | `last_token` | Vector of the last generated token. | -1 (Last) |
 | `eos_token` | Vector corresponding to the EOS token position. | -1 (Last) |
+| `index` | Extract embedding from a specific token index (requires `pooling_config`). | User defined |
 | `prompt_eol` | Embeddings extracted using a prompt template targeting the last token. | -1 (Last) |
 | `pcoteol` | "Pretended Chain of Thought" - wraps input in a reasoning template. | -2 |
 | `ke` | "Knowledge Enhancement" - wraps input in a context-aware template. | -2 |
@@ -172,4 +216,4 @@ If you use the advanced pooling strategies implemented in this library, please c
 
 ## License
 
-This project is open source and available under the [Apache-2.0 license](LICENSE).
+This project is open source and available under the [MIT License](https://www.google.com/search?q=LICENSE).
