@@ -1,11 +1,13 @@
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from ..interfaces import Backend
 
+logger = logging.getLogger(__name__)
 
 class TransformersBackend(Backend):
     def __init__(
@@ -52,6 +54,14 @@ class TransformersBackend(Backend):
         load_kws = load_kws.copy()
         
         if self.quantization:
+            try:
+                from transformers import BitsAndBytesConfig
+            except ImportError:
+                raise ImportError(
+                    "Quantization requires 'bitsandbytes'. "
+                    "Please install it with `pip install llemb[quantization]`."
+                )
+            
             if self.quantization == "4bit":
                 quantization_config = BitsAndBytesConfig(load_in_4bit=True)
             elif self.quantization == "8bit":
@@ -74,9 +84,9 @@ class TransformersBackend(Backend):
             **load_kws
         )
         
-        if not self.quantization:
-             assert self.model is not None
-             self.model.to(self.device)
+        if not self.quantization and "device_map" not in load_kws:
+            assert self.model is not None
+            self.model.to(self.device)
 
     def encode(
         self,
@@ -97,6 +107,9 @@ class TransformersBackend(Backend):
         
         if isinstance(text, str):
             text = [text]
+
+        if not text:
+            return torch.empty(0)
             
         if pooling == "prompt_eol":
             text = [f'This Sentence : "{t}" means in one word:"' for t in text]
@@ -119,10 +132,17 @@ class TransformersBackend(Backend):
             padding=True,
             truncation=True
         ).to(self.model.device)
-        
+
         with torch.no_grad():
             outputs = self.model(**inputs, output_hidden_states=True)
-            
+
+        num_layers = len(outputs.hidden_states)
+        if not (-num_layers <= layer_index < num_layers):
+            raise ValueError(
+                f"layer_index {layer_index} is out of bounds. "
+                f"Model has {num_layers} layers (valid indices: {-num_layers} to {num_layers - 1})."
+            )
+        
         # Get hidden states
         hidden_states = outputs.hidden_states[layer_index]
         
@@ -141,26 +161,30 @@ class TransformersBackend(Backend):
             # Gather
             batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
             embeddings = hidden_states[batch_indices, seq_lengths]
-            
+        
         elif pooling == "eos_token":
-             # Find index of EOS token.
-             eos_id = self.tokenizer.eos_token_id
-             input_ids = inputs.input_ids
-             
-             # Create a mask where input_ids == eos_id
-             matches = (input_ids == eos_id)
-             # If any match
-             embeddings_list = []
-             for i in range(input_ids.size(0)):
-                 row_matches = matches[i].nonzero()
-                 if row_matches.size(0) > 0:
-                     last_eos_idx = row_matches[-1].item()
-                     embeddings_list.append(hidden_states[i, last_eos_idx])
-                 else:
-                     # Fallback to last token if no EOS found
-                     last_idx = inputs.attention_mask[i].sum() - 1
-                     embeddings_list.append(hidden_states[i, last_idx])
-             embeddings = torch.stack(embeddings_list)
+            # Find index of EOS token.
+            eos_id = self.tokenizer.eos_token_id
+            input_ids = inputs.input_ids
+            
+            # Create a mask where input_ids == eos_id
+            matches = (input_ids == eos_id)
+            # If any match
+            embeddings_list = []
+            for i in range(input_ids.size(0)):
+                row_matches = matches[i].nonzero()
+                if row_matches.size(0) > 0:
+                    last_eos_idx = row_matches[-1].item()
+                    embeddings_list.append(hidden_states[i, last_eos_idx])
+                else:
+                    logger.warning(
+                        f"EOS token not found for sequence at index {i}. "
+                        "Falling back to last token."
+                    )
+                    # Fallback to last token if no EOS found
+                    last_idx = inputs.attention_mask[i].sum() - 1
+                    embeddings_list.append(hidden_states[i, last_idx])
+            embeddings = torch.stack(embeddings_list)
 
         elif pooling in ["prompt_eol", "pcoteol", "ke"]:
             # Extract the very last token (corresponding to the final ")
@@ -168,8 +192,8 @@ class TransformersBackend(Backend):
             seq_lengths = inputs.attention_mask.sum(dim=1) - 1
             batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
             embeddings = hidden_states[batch_indices, seq_lengths]
-            
+        
         else:
             raise ValueError(f"Unknown pooling method: {pooling}")
-            
+        
         return embeddings.cpu().detach()
