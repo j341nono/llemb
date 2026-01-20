@@ -42,7 +42,6 @@ class TransformersBackend(Backend):
         self.model = None
         self.tokenizer = None
         
-        # Merge model_kwargs into kwargs if present for backward compatibility or explicit usage
         if "model_kwargs" in kwargs:
             kwargs.update(kwargs.pop("model_kwargs"))
             
@@ -50,7 +49,6 @@ class TransformersBackend(Backend):
 
     def _load_model(self, load_kws: "Dict[str, Any]") -> None:
         quantization_config = None
-        # Make a copy to avoid mutating the original kwargs if used elsewhere
         load_kws = load_kws.copy()
         
         if self.quantization:
@@ -70,7 +68,6 @@ class TransformersBackend(Backend):
             if quantization_config:
                 load_kws["quantization_config"] = quantization_config
             
-            # Ensure device_map is set for quantization (required for bitsandbytes)
             if "device_map" not in load_kws:
                 load_kws["device_map"] = "auto"
         
@@ -98,7 +95,6 @@ class TransformersBackend(Backend):
         if self.tokenizer is None or self.model is None:
             raise RuntimeError("Model or tokenizer not initialized")
 
-        # Set default layer_index based on pooling strategy
         if layer_index is None:
             if pooling in ["pcoteol", "ke"]:
                 layer_index = -2
@@ -143,33 +139,42 @@ class TransformersBackend(Backend):
                 f"Model has {num_layers} layers (valid indices: {-num_layers} to {num_layers - 1})."
             )
         
-        # Get hidden states
         hidden_states = outputs.hidden_states[layer_index]
         
         input_ids = inputs.input_ids
         
         if pooling == "mean":
-            # Mask padding tokens
             mask = inputs.attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
             sum_embeddings = torch.sum(hidden_states * mask, dim=1)
             sum_mask = torch.clamp(mask.sum(dim=1), min=1e-9)
             embeddings = sum_embeddings / sum_mask
             
         elif pooling == "last_token":
-            # Use attention_mask to find the last non-padding token
             seq_lengths = inputs.attention_mask.sum(dim=1) - 1
-            # Gather
             batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
             embeddings = hidden_states[batch_indices, seq_lengths]
+
+        elif pooling == "index":
+            target_idx = kwargs.get("token_index", -1)
+            batch_size = hidden_states.size(0)
+            seq_len = hidden_states.size(1)
+
+            if not (-seq_len <= target_idx < seq_len):
+                 logger.warning(
+                    f"Requested token_index={target_idx} is out of bounds for sequence length {seq_len}. "
+                    "Falling back to last token."
+                )
+                 seq_lengths = inputs.attention_mask.sum(dim=1) - 1
+                 batch_indices = torch.arange(batch_size, device=hidden_states.device)
+                 embeddings = hidden_states[batch_indices, seq_lengths]
+            else:
+                 embeddings = hidden_states[:, target_idx, :]
         
         elif pooling == "eos_token":
-            # Find index of EOS token.
             eos_id = self.tokenizer.eos_token_id
             input_ids = inputs.input_ids
             
-            # Create a mask where input_ids == eos_id
             matches = (input_ids == eos_id)
-            # If any match
             embeddings_list = []
             for i in range(input_ids.size(0)):
                 row_matches = matches[i].nonzero()
@@ -181,14 +186,11 @@ class TransformersBackend(Backend):
                         f"EOS token not found for sequence at index {i}. "
                         "Falling back to last token."
                     )
-                    # Fallback to last token if no EOS found
                     last_idx = inputs.attention_mask[i].sum() - 1
                     embeddings_list.append(hidden_states[i, last_idx])
             embeddings = torch.stack(embeddings_list)
 
         elif pooling in ["prompt_eol", "pcoteol", "ke"]:
-            # Extract the very last token (corresponding to the final ")
-            # Use attention_mask to find the last non-padding token
             seq_lengths = inputs.attention_mask.sum(dim=1) - 1
             batch_indices = torch.arange(hidden_states.size(0), device=hidden_states.device)
             embeddings = hidden_states[batch_indices, seq_lengths]

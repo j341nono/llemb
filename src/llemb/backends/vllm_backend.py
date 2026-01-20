@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
-from vllm import LLM, PoolingParams
 
 from ..interfaces import Backend
 
@@ -30,36 +29,39 @@ class VLLMBackend(Backend):
             gpu_memory_utilization: vLLM argument.
             max_model_len: Context length.
             tensor_parallel_size: Number of GPUs.
-            **kwargs: Additional arguments passed to LLM init.
+            **kwargs: Additional arguments passed to LLM init (e.g. enforce_eager).
         """
+        try:
+            from vllm import LLM, PoolingParams
+        except ImportError:
+            raise ImportError(
+                "VLLMBackend requires 'vllm'. "
+                "Please install it with `pip install vllm` or `pip install llemb[vllm]`."
+            )
+
         self.model_name = model_name
         self.device = device
         
-        # vLLM arguments preparation
+        enforce_eager = kwargs.pop("enforce_eager", True)
+
         vllm_kwargs = {
             "model": model_name,
             "trust_remote_code": True,
             "quantization": quantization,
             "gpu_memory_utilization": gpu_memory_utilization,
             "tensor_parallel_size": tensor_parallel_size,
-            # runner="pooling" is implicitly handled if task is specified in recent vLLM, 
-            # but explicit setting helps.
-            "enforce_eager": kwargs.pop("enforce_eager", False), 
+            "enforce_eager": enforce_eager,
+            "runner": "pooling", 
         }
-        
+
         if max_model_len:
             vllm_kwargs["max_model_len"] = max_model_len
 
-        # Update with any remaining kwargs
         vllm_kwargs.update(kwargs)
 
         logger.info(f"Initializing vLLM with args: {vllm_kwargs}")
         
-        # Initialize vLLM Engine
-        # Note: vLLM usually expects to be initialized once per process.
         self.model = LLM(**vllm_kwargs)
-        
-        # Get tokenizer for EOS token handling
         self.tokenizer = self.model.get_tokenizer()
 
     def encode(
@@ -70,18 +72,17 @@ class VLLMBackend(Backend):
         **kwargs: Any
     ) -> Union["np.ndarray[Any, Any]", torch.Tensor]:
         """
-        Encode text using vLLM using 'token_embed' task to fetch all token embeddings,
+        Encode text using vLLM.
+        We request 'token_embed' task to fetch all token embeddings, 
         then apply pooling logic client-side.
         """
         if self.model is None:
             raise RuntimeError("vLLM Model not initialized")
 
-        # Warning about layer_index limitation in vLLM
         if layer_index is not None and layer_index != -1:
             logger.warning(
-                f"layer_index={layer_index} was requested, but vLLM standardly returns "
-                "embeddings from the last layer (or the target embedding layer). "
-                "This parameter might be ignored unless the model supports layer selection natively."
+                f"layer_index={layer_index} was requested, but vLLM backend currently "
+                "only supports the last layer output. This parameter is ignored."
             )
 
         if isinstance(text, str):
@@ -90,10 +91,7 @@ class VLLMBackend(Backend):
         if not text:
             return torch.empty(0)
 
-        # --- Prompt Engineering (Same as TransformersBackend) ---
-        original_texts = text # Keep original for reference if needed
         prompts = []
-        
         if pooling == "prompt_eol":
             prompts = [f'This Sentence : "{t}" means in one word:"' for t in text]
         elif pooling == "pcoteol":
@@ -111,61 +109,81 @@ class VLLMBackend(Backend):
         else:
             prompts = text
 
-        # --- vLLM Execution ---
-        # Request 'token_embed' task to get [SeqLen, Hidden] for each prompt.
-        # This allows us to calculate arbitrary indices manually.
-        pooling_params = PoolingParams(task="token_embed")
-        
-        # embed() returns List[EmbeddingRequestOutput]
-        # use_tqdm=False to reduce noise
-        outputs = self.model.embed(prompts, pooling_params=pooling_params, use_tqdm=False)
-        
-        # --- Client-side Pooling Logic ---
+        try:
+            pooling_params = PoolingParams(task="token_embed")
+            outputs = self.model.encode(
+                prompts, 
+                pooling_params=pooling_params, 
+                use_tqdm=False,
+                pooling_task="token_embed"
+            )
+        except (AttributeError, TypeError, ValueError) as e:
+            logger.warning(f"Failed to use LLM.encode with token_embed: {e}. Falling back to LLM.embed.")
+            pooling_params = PoolingParams() 
+            outputs = self.model.embed(prompts, pooling_params=pooling_params, use_tqdm=False)
+
         embeddings_list = []
         
         for i, output in enumerate(outputs):
-            # output.outputs.embedding is List[float] (flat) or List[List[float]]?
-            # In 'token_embed' task, it should be a sequence of embeddings.
-            # Convert to tensor: shape [SeqLen, HiddenDim]
-            token_embeddings = torch.tensor(output.outputs.embedding, device=self.device)
+            if hasattr(output, "outputs"):
+                out_data = output.outputs
+            else:
+                out_data = output 
+
+            if hasattr(out_data, "embedding"):
+                raw_emb = out_data.embedding
+            elif hasattr(out_data, "data"): 
+                raw_emb = out_data.data
+            else:
+                raw_emb = getattr(out_data, "embedding", [])
+
+            if isinstance(raw_emb, torch.Tensor):
+                val = raw_emb.to(self.device)
+            else:
+                val = torch.tensor(raw_emb, device=self.device)
             
-            # vLLM returns embeddings for non-padding tokens.
-            # We don't need attention_mask here because vLLM output corresponds to actual tokens.
-            seq_len = token_embeddings.size(0)
+            if val.ndim == 1:
+                token_embeddings = val.unsqueeze(0)
+            else:
+                token_embeddings = val
             
-            # Apply Pooling
             if pooling == "mean":
-                # Average over Sequence dimension
-                emb = torch.mean(token_embeddings, dim=0)
-                
+                if token_embeddings.size(0) > 1:
+                    emb = torch.mean(token_embeddings, dim=0)
+                else:
+                    emb = token_embeddings[0]
+                    
             elif pooling == "last_token":
-                # Last token in the sequence
                 emb = token_embeddings[-1]
+
+            elif pooling == "index":
+                target_idx = kwargs.get("token_index", -1)
+                seq_len = token_embeddings.size(0)
+                try:
+                    emb = token_embeddings[target_idx]
+                except IndexError:
+                    logger.warning(
+                        f"Requested token_index={target_idx} is out of bounds for sequence {i} "
+                        f"(length={seq_len}). Falling back to last token."
+                    )
+                    emb = token_embeddings[-1]
                 
             elif pooling == "eos_token":
-                # Re-tokenize to find EOS position matches
-                # Note: This is computationally expensive but necessary since vLLM outputs
-                # don't carry token IDs in the embedding output object by default in all versions.
-                # However, output.prompt_token_ids is available!
-                token_ids = output.prompt_token_ids
-                eos_id = self.tokenizer.eos_token_id
-                
-                # Find the last occurrence of EOS
-                # indices where token_ids == eos_id
-                indices = [idx for idx, tid in enumerate(token_ids) if tid == eos_id]
-                
-                if indices:
-                    target_idx = indices[-1]
-                    emb = token_embeddings[target_idx]
+                if hasattr(output, "prompt_token_ids"):
+                    token_ids = output.prompt_token_ids
+                    eos_id = self.tokenizer.eos_token_id
+                    
+                    indices = [idx for idx, tid in enumerate(token_ids) if tid == eos_id]
+                    
+                    if indices and indices[-1] < token_embeddings.size(0):
+                        emb = token_embeddings[indices[-1]]
+                    else:
+                        logger.debug(f"EOS token not found for sequence {i}, using last token.")
+                        emb = token_embeddings[-1]
                 else:
-                    logger.warning(
-                        f"EOS token not found for sequence at index {i}. "
-                        "Falling back to last token."
-                    )
                     emb = token_embeddings[-1]
 
             elif pooling in ["prompt_eol", "pcoteol", "ke"]:
-                # These methods target the last token of the constructed prompt (which ends in quote)
                 emb = token_embeddings[-1]
             
             else:
@@ -173,9 +191,7 @@ class VLLMBackend(Backend):
             
             embeddings_list.append(emb)
 
-        # Stack and move to CPU
         if not embeddings_list:
             return torch.empty(0)
             
-        final_embeddings = torch.stack(embeddings_list)
-        return final_embeddings.cpu().detach()
+        return torch.stack(embeddings_list).cpu().detach()
