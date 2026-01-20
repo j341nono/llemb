@@ -19,15 +19,19 @@ Unified embedding extraction from Decoder-only LLMs.
 
 ## Installation
 
-Install using `uv`:
+Install via PyPI using `pip` or `uv`:
 
 ```bash
+pip install llemb
+# or
 uv add llemb
 ```
 
 To include quantization support:
 
 ```bash
+pip install "llemb[quantization]"
+# or
 uv add llemb[quantization]
 ```
 
@@ -98,13 +102,10 @@ encoder = Encoder(
 
 ## References
 
-- **PromptEOL:**
-
-    Ting Jiang, Shaohan Huang, Zhongzhi Luan, Deqing Wang, and Fuzhen Zhuang. 2024. Scaling Sentence Embeddings with Large Language Models. Findings of the Association for Computational Linguistics: EMNLP 2024.
-
-- **PCoTEOL and KE:**
-
-    Bowen Zhang, Kehua Chang, and Chunping Li. 2024. Simple Techniques for Enhancing Sentence Embeddings in Generative Language Models. arXiv preprint arXiv:2404.03921.
+* **PromptEOL:**
+Ting Jiang, Shaohan Huang, Zhongzhi Luan, Deqing Wang, and Fuzhen Zhuang. 2024. Scaling Sentence Embeddings with Large Language Models. Findings of the Association for Computational Linguistics: EMNLP 2024.
+* **PCoTEOL and KE:**
+Bowen Zhang, Kehua Chang, and Chunping Li. 2024. Simple Techniques for Enhancing Sentence Embeddings in Generative Language Models. arXiv preprint arXiv:2404.03921.
 
 ## Development
 

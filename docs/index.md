@@ -19,15 +19,19 @@ Unified embedding extraction from Decoder-only LLMs.
 
 ## Installation
 
-Install using `uv`:
+Install via PyPI using `pip` or `uv`:
 
 ```bash
+pip install llemb
+# or
 uv add llemb
 ```
 
 To include quantization support:
 
 ```bash
+pip install "llemb[quantization]"
+# or
 uv add llemb[quantization]
 ```
 
