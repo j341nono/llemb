@@ -136,9 +136,6 @@ class TransformersBackend(Backend):
             )
 
         hidden_states = outputs.hidden_states[layer_index]
-
-        input_ids = inputs.input_ids
-
         if pooling == "mean":
             mask = inputs.attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
             sum_embeddings = torch.sum(hidden_states * mask, dim=1)
