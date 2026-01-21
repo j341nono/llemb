@@ -13,11 +13,11 @@ With `llemb`, you can easily leverage powerful LLMs for embedding tasks using ad
 - **Flexible Backends**: Seamless support for **Hugging Face Transformers** and **vLLM** (for high-speed inference).
 - **Advanced Pooling Strategies**:
     - Standard: `mean`, `last_token`, `eos_token`
-    - Precise Control: `index` (extract from specific token indices)
+    - Precise Control: `index` (extract from specific token indices, e.g., the first token)
     - Research-grade: `prompt_eol`, `pcoteol` (Pretended Chain of Thought), `ke` (Knowledge Enhancement)
 - **High-Performance**:
-    - **Batch Processing**: Efficiently handles large datasets with automatic CPU offloading and progress bars.
-    - **Quantization**: Native support for **4-bit and 8-bit** via `bitsandbytes`.
+    - **Batch Processing**: Efficiently handles large datasets with automatic CPU offloading and progress bars (`tqdm`).
+    - **Quantization**: Native support for **4-bit and 8-bit** via `bitsandbytes` (Transformers) or `fp8`/`awq`/`gptq` (vLLM).
 - **Granular Control**: Extract embeddings from any layer (defaults to recommended layers based on research).
 
 ## Installation
@@ -73,7 +73,7 @@ print(embeddings.shape)
 
 ### Batch Processing (Recommended for Large Data)
 
-Process lists of texts efficiently. `llemb` handles batching, progress tracking, and memory management (CPU offloading) automatically.
+Process lists of texts efficiently. `llemb` handles batching, progress tracking with `tqdm`, and memory management by automatically offloading computed embeddings to the CPU to prevent GPU VRAM saturation.
 
 ```python
 texts = [
@@ -91,12 +91,29 @@ print(embeddings.shape)
 
 ### Using vLLM Backend
 
-For maximum throughput on supported hardware, use the vLLM backend.
+For maximum throughput on supported hardware, use the vLLM backend. You can pass vLLM-specific arguments (like `tensor_parallel_size` or `gpu_memory_utilization`) directly to the encoder.
 
 ```python
 enc = llemb.Encoder(
     "meta-llama/Llama-3.1-8B",
-    backend="vllm"
+    backend="vllm",
+    tensor_parallel_size=1,       # Number of GPUs
+    gpu_memory_utilization=0.9    # vLLM memory setting
+)
+
+embeddings = enc.encode("Hello vLLM", pooling="last_token")
+```
+
+### Precise Control: Index Pooling
+
+If you need embeddings from a specific token position (e.g., the first token or a specific index), use the `index` pooling strategy.
+
+```python
+# Extract embedding from the first token (index 0)
+embeddings = enc.encode(
+    "Hello world",
+    pooling="index",
+    token_index=0
 )
 ```
 
@@ -160,6 +177,7 @@ encoder = llemb.Encoder(
 | `mean` | Average pooling of all tokens (excluding padding). | -1 (Last) |
 | `last_token` | Vector of the last generated token. | -1 (Last) |
 | `eos_token` | Vector corresponding to the EOS token position. | -1 (Last) |
+| `index` | Vector of a specific token index (via `token_index` arg). | -1 (Last) |
 | `prompt_eol` | Embeddings extracted using a prompt template targeting the last token. | -1 (Last) |
 | `pcoteol` | "Pretended Chain of Thought" - wraps input in a reasoning template. | -2 |
 | `ke` | "Knowledge Enhancement" - wraps input in a context-aware template. | -2 |
@@ -169,7 +187,7 @@ encoder = llemb.Encoder(
 Clone the repository and sync dependencies using `uv`:
 
 ```bash
-git clone https://github.com/j341nono/llemb.git
+git clone [https://github.com/j341nono/llemb.git](https://github.com/j341nono/llemb.git)
 cd llemb
 uv sync --all-extras --dev
 ```
