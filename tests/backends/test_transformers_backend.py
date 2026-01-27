@@ -72,8 +72,18 @@ def test_layer_index_selection(backend):
 def test_layer_index_defaults(backend):
     """Verify default layer selection logic."""
     # 'pcoteol' template defaults to layer -2
-    emb_p_default = backend.encode("hello", pooling_method="last_token", prompt_template="pcoteol", layer_index=None)
-    emb_p_explicit = backend.encode("hello", pooling_method="last_token", prompt_template="pcoteol", layer_index=-2)
+    emb_p_default = backend.encode(
+        "hello",
+        pooling_method="last_token",
+        prompt_template="pcoteol",
+        layer_index=None
+    )
+    emb_p_explicit = backend.encode(
+        "hello",
+        pooling_method="last_token",
+        prompt_template="pcoteol",
+        layer_index=-2
+    )
     assert torch.allclose(emb_p_default, emb_p_explicit)
 
     # 'mean' without template defaults to layer -1

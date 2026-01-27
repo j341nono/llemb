@@ -60,13 +60,19 @@ class TestIntegration:
     ])
     def test_pooling_strategies(self, shared_encoder_cpu, pooling_method, prompt_template):
         enc = shared_encoder_cpu
-        embeddings = enc.encode(SAMPLE_TEXTS, pooling_method=pooling_method, prompt_template=prompt_template)
+        embeddings = enc.encode(
+            SAMPLE_TEXTS,
+            pooling_method=pooling_method,
+            prompt_template=prompt_template
+        )
         
         expected_dim = enc.backend_instance.model.config.hidden_size
         
         assert embeddings.shape[0] == len(SAMPLE_TEXTS)
         assert embeddings.shape[1] == expected_dim
-        assert not torch.isnan(torch.tensor(embeddings)).any(), f"NaN found in {pooling_method}/{prompt_template}"
+        assert not torch.isnan(torch.tensor(embeddings)).any(), (
+            f"NaN found in {pooling_method}/{prompt_template}"
+        )
 
     def test_batch_processing_consistency(self, shared_encoder_cpu):
         enc = shared_encoder_cpu
