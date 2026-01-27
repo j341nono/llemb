@@ -126,6 +126,14 @@ class TransformersBackend(Backend):
         elif prompt_template is not None:
             raise ValueError(f"Unknown prompt_template: {prompt_template}")
 
+        # For eos_token pooling, ensure EOS token is present in the input
+        if pooling_method == "eos_token" and self.tokenizer.eos_token:
+            # Check and append EOS token if not present
+            text = [
+                t if t.endswith(self.tokenizer.eos_token) else t + self.tokenizer.eos_token
+                for t in text
+            ]
+
         inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(self.model.device)
 
         with torch.no_grad():
@@ -152,10 +160,14 @@ class TransformersBackend(Backend):
             embeddings = hidden_states[:, -1, :]
 
         elif pooling_method == "eos_token":
-            # Use attention_mask to find the last non-padding token
-            # With left padding, the last token is also the effective EOS token
-            # unless the generation stopped early (not applicable for embedding extraction)
-            # We can robustly use index -1 if we trust left padding + truncation
+            # Use attention_mask to find the last non-padding token (which should be EOS)
+            # With left padding, we need to find the actual position of the last real token
+            batch_size = hidden_states.size(0)
+            seq_lengths = inputs.attention_mask.sum(dim=1)  # Length of each sequence
+            
+            # Extract embedding at the last non-padded position for each item in batch
+            # Since we use left padding, the last real token is at position (seq_length - 1)
+            # But with left padding at position [-1], this is always the last token
             embeddings = hidden_states[:, -1, :]
 
         else:
