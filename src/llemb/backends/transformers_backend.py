@@ -87,15 +87,17 @@ class TransformersBackend(Backend):
     def encode(
         self,
         text: Union[str, List[str]],
-        pooling: str = "mean",
+        pooling_method: str = "mean",
         layer_index: Optional[int] = None,
+        prompt_template: Optional[str] = None,
         **kwargs: Any,
     ) -> Union["np.ndarray[Any, Any]", torch.Tensor]:
         if self.tokenizer is None or self.model is None:
             raise RuntimeError("Model or tokenizer not initialized")
 
+        # Determine layer index with priority: explicit > template-specific > global default
         if layer_index is None:
-            if pooling in ["pcoteol", "ke"]:
+            if prompt_template in ["pcoteol", "ke"]:
                 layer_index = -2
             else:
                 layer_index = -1
@@ -106,20 +108,23 @@ class TransformersBackend(Backend):
         if not text:
             return torch.empty(0)
 
-        if pooling == "prompt_eol":
+        # Apply prompt template if specified
+        if prompt_template == "prompteol":
             text = [f'This Sentence : "{t}" means in one word:"' for t in text]
-        elif pooling == "pcoteol":
+        elif prompt_template == "pcoteol":
             text = [
                 f'After thinking step by step, this sentence : "{t}" means in one word:"'
                 for t in text
             ]
-        elif pooling == "ke":
+        elif prompt_template == "ke":
             text = [
                 f"The essence of a sentence is often captured by its main subjects and actions, "
                 f"while descriptive terms provide additional but less central details. "
                 f'With this in mind , this sentence : "{t}" means in one word:"'
                 for t in text
             ]
+        elif prompt_template is not None:
+            raise ValueError(f"Unknown prompt_template: {prompt_template}")
 
         inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(self.model.device)
 
@@ -134,28 +139,26 @@ class TransformersBackend(Backend):
             )
 
         hidden_states = outputs.hidden_states[layer_index]
-        if pooling == "mean":
+        
+        # Apply pooling method
+        if pooling_method == "mean":
             mask = inputs.attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
             sum_embeddings = torch.sum(hidden_states * mask, dim=1)
             sum_mask = torch.clamp(mask.sum(dim=1), min=1e-9)
             embeddings = sum_embeddings / sum_mask
 
-        elif pooling == "last_token":
+        elif pooling_method == "last_token":
             # With left padding, the last token is always at index -1
             embeddings = hidden_states[:, -1, :]
 
-        elif pooling == "eos_token":
+        elif pooling_method == "eos_token":
             # Use attention_mask to find the last non-padding token
             # With left padding, the last token is also the effective EOS token
             # unless the generation stopped early (not applicable for embedding extraction)
             # We can robustly use index -1 if we trust left padding + truncation
             embeddings = hidden_states[:, -1, :]
 
-        elif pooling in ["prompt_eol", "pcoteol", "ke"]:
-            # Extract the very last token (corresponding to the final ")
-            # With left padding, this is simply index -1
-            embeddings = hidden_states[:, -1, :]
         else:
-            raise ValueError(f"Unknown pooling method: {pooling}")
+            raise ValueError(f"Unknown pooling_method: {pooling_method}")
 
         return embeddings.cpu().detach()

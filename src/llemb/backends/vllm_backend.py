@@ -72,8 +72,9 @@ class VLLMBackend(Backend):
     def encode(
         self,
         text: Union[str, List[str]],
-        pooling: str = "mean",
+        pooling_method: str = "mean",
         layer_index: Optional[int] = None,
+        prompt_template: Optional[str] = None,
         **kwargs: Any,
     ) -> Union["np.ndarray[Any, Any]", torch.Tensor]:
         """
@@ -84,6 +85,7 @@ class VLLMBackend(Backend):
         if self.model is None:
             raise RuntimeError("vLLM Model not initialized")
 
+        # vLLM backend warning for layer_index
         if layer_index is not None and layer_index != -1:
             logger.warning(
                 f"layer_index={layer_index} was requested, but vLLM backend currently "
@@ -96,21 +98,24 @@ class VLLMBackend(Backend):
         if not text:
             return torch.empty(0)
 
+        # Apply prompt template if specified
         prompts = []
-        if pooling == "prompt_eol":
+        if prompt_template == "prompteol":
             prompts = [f'This Sentence : "{t}" means in one word:"' for t in text]
-        elif pooling == "pcoteol":
+        elif prompt_template == "pcoteol":
             prompts = [
                 f'After thinking step by step, this sentence : "{t}" means in one word:"'
                 for t in text
             ]
-        elif pooling == "ke":
+        elif prompt_template == "ke":
             prompts = [
                 f"The essence of a sentence is often captured by its main subjects and actions, "
                 f"while descriptive terms provide additional but less central details. "
                 f'With this in mind , this sentence : "{t}" means in one word:"'
                 for t in text
             ]
+        elif prompt_template is not None:
+            raise ValueError(f"Unknown prompt_template: {prompt_template}")
         else:
             prompts = text
 
@@ -151,16 +156,17 @@ class VLLMBackend(Backend):
             else:
                 token_embeddings = val
 
-            if pooling == "mean":
+            # Apply pooling method
+            if pooling_method == "mean":
                 if token_embeddings.size(0) > 1:
                     emb = torch.mean(token_embeddings, dim=0)
                 else:
                     emb = token_embeddings[0]
 
-            elif pooling == "last_token":
+            elif pooling_method == "last_token":
                 emb = token_embeddings[-1]
 
-            elif pooling == "eos_token":
+            elif pooling_method == "eos_token":
                 if hasattr(output, "prompt_token_ids"):
                     token_ids = output.prompt_token_ids
                     eos_id = self.tokenizer.eos_token_id
@@ -175,11 +181,8 @@ class VLLMBackend(Backend):
                 else:
                     emb = token_embeddings[-1]
 
-            elif pooling in ["prompt_eol", "pcoteol", "ke"]:
-                emb = token_embeddings[-1]
-
             else:
-                raise ValueError(f"Unknown pooling method: {pooling}")
+                raise ValueError(f"Unknown pooling_method: {pooling_method}")
 
             embeddings_list.append(emb)
 
