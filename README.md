@@ -35,7 +35,7 @@ pip install llemb
 uv add llemb
 ```
 
-Starting from v0.3.0, `bitsandbytes` for quantization is included by default.
+Starting from v0.2.2, `bitsandbytes` for quantization is included by default.
 
 **With vLLM Support**
 
@@ -204,7 +204,7 @@ encoder = llemb.Encoder(
 
 You can combine any pooling method with any prompt template. When using `pcoteol` or `ke` templates, the default layer is automatically set to -2 unless explicitly overridden.
 
-**Smart Defaults (v0.3.0+):**
+**Smart Defaults (v0.2.2+):**
 - When `prompt_template` is specified, `pooling_method` automatically defaults to `last_token`
 - When no `prompt_template` is specified, `pooling_method` defaults to `mean`
 - Explicit values always take precedence
@@ -213,7 +213,7 @@ You can combine any pooling method with any prompt template. When using `pcoteol
 
 If you're upgrading from an earlier version of `llemb`, the API has been refactored to separate pooling methods and prompt templates into orthogonal parameters.
 
-### Breaking Changes in v0.3.0
+### Breaking Changes in v0.2.2
 
 1. **API Refactoring**: `pooling` parameter split into `pooling_method` and `prompt_template`
 2. **Smart Defaults**: `pooling_method` automatically set to `last_token` when using templates
@@ -228,7 +228,7 @@ enc.encode("text", pooling="pcoteol")  # Mixed template + pooling
 enc.encode("text", pooling="index", token_index=0)  # Index strategy
 ```
 
-**New API (v0.3.0+):**
+**New API (v0.2.2+):**
 ```python
 # New: separate parameters with smart defaults
 enc.encode("text", pooling_method="mean")
