@@ -190,7 +190,7 @@ encoder = llemb.Encoder(
 Clone the repository and sync dependencies using `uv`:
 
 ```bash
-git clone [https://github.com/j341nono/llemb.git](https://github.com/j341nono/llemb.git)
+git clone https://github.com/j341nono/llemb.git
 cd llemb
 uv sync --all-extras --dev
 ```
@@ -236,4 +236,4 @@ If you use the advanced pooling strategies implemented in this library, please c
 
 ## License
 
-This project is open source and available under the [MIT License](https://www.google.com/search?q=LICENSE).
+This project is open source and available under the [Apache-2.0 license](https://www.google.com/search?q=LICENSE).
