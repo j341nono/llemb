@@ -27,7 +27,7 @@ With `llemb`, you can easily leverage powerful LLMs for embedding tasks using ad
 
 Install via PyPI using `pip` or `uv`.
 
-**Basic Installation**
+**Basic Installation (includes quantization support)**
 
 ```bash
 pip install llemb
@@ -35,15 +35,7 @@ pip install llemb
 uv add llemb
 ```
 
-**With Quantization Support**
-
-To enable 4-bit/8-bit quantization (recommended for large models):
-
-```bash
-pip install "llemb[quantization]"
-# or
-uv add llemb[quantization]
-```
+Starting from v0.3.0, `bitsandbytes` for quantization is included by default.
 
 **With vLLM Support**
 
@@ -109,14 +101,14 @@ embeddings = enc.encode("Hello vLLM", pooling_method="last_token")
 
 ### Using Prompt Templates
 
-Leverage research-backed prompt templates to improve embedding quality. Templates are applied independently of pooling methods.
+Leverage research-backed prompt templates to improve embedding quality. When you specify a template, `pooling_method` automatically defaults to `last_token`.
 
 ```python
 import llemb
 
 enc = llemb.Encoder("meta-llama/Llama-3.1-8B")
 
-# Use PromptEOL template with last_token pooling
+# Simple usage - pooling_method automatically defaults to last_token
 embeddings = enc.encode(
     "Hello world",
     prompt_template="prompteol"
@@ -126,14 +118,19 @@ embeddings = enc.encode(
 # Note: Automatically uses layer -2 when prompt_template is "pcoteol" or "ke"
 embeddings = enc.encode(
     "Hello world",
-    pooling_method="last_token",
     prompt_template="pcoteol"
 )
 
-# You can override the layer index explicitly
+# You can still specify pooling_method explicitly if needed
 embeddings = enc.encode(
     "Hello world",
-    pooling_method="last_token",
+    pooling_method="mean",  # Override default last_token
+    prompt_template="pcoteol"
+)
+
+# Or override the layer index
+embeddings = enc.encode(
+    "Hello world",
     prompt_template="pcoteol",
     layer_index=-1  # Override default -2
 )
@@ -214,11 +211,21 @@ encoder = llemb.Encoder(
 
 You can combine any pooling method with any prompt template. When using `pcoteol` or `ke` templates, the default layer is automatically set to -2 unless explicitly overridden.
 
+**Smart Defaults (v0.3.0+):**
+- When `prompt_template` is specified, `pooling_method` automatically defaults to `last_token`
+- When no `prompt_template` is specified, `pooling_method` defaults to `mean`
+- Explicit values always take precedence
+
 ## Migration Guide
 
 If you're upgrading from an earlier version of `llemb`, the API has been refactored to separate pooling methods and prompt templates into orthogonal parameters.
 
-### Breaking Changes
+### Breaking Changes in v0.3.0
+
+1. **API Refactoring**: `pooling` parameter split into `pooling_method` and `prompt_template`
+2. **Smart Defaults**: `pooling_method` automatically set to `last_token` when using templates
+3. **Dependencies**: `bitsandbytes` is now a core dependency (no longer optional)
+4. **Removed**: `index` pooling strategy has been removed
 
 **Old API (deprecated):**
 ```python
@@ -228,32 +235,35 @@ enc.encode("text", pooling="pcoteol")  # Mixed template + pooling
 enc.encode("text", pooling="index", token_index=0)  # Index strategy
 ```
 
-**New API:**
+**New API (v0.3.0+):**
 ```python
-# New: separate pooling_method and prompt_template parameters
+# New: separate parameters with smart defaults
 enc.encode("text", pooling_method="mean")
-enc.encode("text", pooling_method="last_token", prompt_template="pcoteol")
+enc.encode("text", prompt_template="pcoteol")  # pooling_method auto-set to last_token
 # Index strategy has been removed
 ```
 
 ### Migration Examples
 
-| Old Code | New Code |
-| --- | --- |
-| `enc.encode(text, pooling="mean")` | `enc.encode(text, pooling_method="mean")` |
-| `enc.encode(text, pooling="last_token")` | `enc.encode(text, pooling_method="last_token")` |
-| `enc.encode(text, pooling="eos_token")` | `enc.encode(text, pooling_method="eos_token")` |
-| `enc.encode(text, pooling="prompteol")` | `enc.encode(text, pooling_method="last_token", prompt_template="prompteol")` |
-| `enc.encode(text, pooling="pcoteol")` | `enc.encode(text, pooling_method="last_token", prompt_template="pcoteol")` |
-| `enc.encode(text, pooling="ke")` | `enc.encode(text, pooling_method="last_token", prompt_template="ke")` |
-| `enc.encode(text, pooling="index", token_index=0)` | *Removed - use `last_token` or implement custom logic* |
+| Old Code | New Code (Explicit) | New Code (Smart Default) |
+| --- | --- | --- |
+| `enc.encode(text, pooling="mean")` | `enc.encode(text, pooling_method="mean")` | `enc.encode(text)` |
+| `enc.encode(text, pooling="last_token")` | `enc.encode(text, pooling_method="last_token")` | — |
+| `enc.encode(text, pooling="eos_token")` | `enc.encode(text, pooling_method="eos_token")` | — |
+| `enc.encode(text, pooling="prompteol")` | `enc.encode(text, pooling_method="last_token", prompt_template="prompteol")` | `enc.encode(text, prompt_template="prompteol")` |
+| `enc.encode(text, pooling="pcoteol")` | `enc.encode(text, pooling_method="last_token", prompt_template="pcoteol")` | `enc.encode(text, prompt_template="pcoteol")` |
+| `enc.encode(text, pooling="ke")` | `enc.encode(text, pooling_method="last_token", prompt_template="ke")` | `enc.encode(text, prompt_template="ke")` |
+| `enc.encode(text, pooling="index", token_index=0)` | *Removed - use `last_token` or implement custom logic* | — |
 
 ### Benefits of the New API
 
 1. **Orthogonality**: You can now combine any pooling method with any prompt template.
 2. **Clarity**: The separation makes it clear what each parameter does.
 3. **Flexibility**: Easier to experiment with different combinations.
-4. **Smart Defaults**: Layer indices are automatically set based on prompt template, but can be explicitly overridden.
+4. **Smart Defaults**: 
+   - `pooling_method` automatically set to `last_token` when using templates
+   - Layer indices automatically set based on prompt template (can be overridden)
+5. **Simpler Usage**: Less boilerplate for common use cases with templates.
 
 ## Development
 
